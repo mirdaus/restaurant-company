@@ -1,19 +1,11 @@
 pipeline {
-    agent {
-        label 'agent'
+    agent any 
+    
+    tools {
+        nodejs 'NodeJS'
     }
 
-    options {
-        timestamps()
-        disableConcurrentBuilds()
-        buildDiscarder(
-            logRotator(
-                numToKeepStr: '10',
-                artifactNumToKeepStr: '5'
-            )
-        )
-    }
-
+   
     environment {
         /*
          * Ubuntu Jenkins agent paths.
