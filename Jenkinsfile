@@ -59,7 +59,7 @@ npm -v
         IMAGE_TAG = "latest"
 
         AWS_REGION = "us-east-1"
-        AWS_ACCOUNT_ID = "230026708124"
+        AWS_ACCOUNT_ID = "484908302072"
         ECR_REPOSITORY = "restaurant-company"
     }
 
@@ -76,19 +76,19 @@ npm -v
             steps {
                 sh '''
                     echo "===== Git ====="
-                    git --version
+                    sh 'git --version'
 
                     echo "===== Node ====="
-                    node -v
+                    sh 'node --version'
 
                     echo "===== NPM ====="
-                    npm -v
+                    sh 'npm --version'
 
                     echo "===== Docker ====="
-                    docker --version
+                    sh 'docker --version'
 
                     echo "===== AWS CLI ====="
-                    aws --version
+                    sh 'aws --version'
                 '''
             }
         }
