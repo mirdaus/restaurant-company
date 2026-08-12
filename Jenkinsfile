@@ -1,6 +1,6 @@
- pipeline {
-     agent any {
-        
+pipeline {
+    agent {
+        label "agent"
     }
 
     environment {
@@ -33,7 +33,149 @@
                     node -v
 
                     echo ""
-       …
+                    echo "===== NPM ====="
+                    npm -v
+
+                    echo ""
+                    echo "===== Docker ====="
+                    docker --version
+
+                    echo ""
+                    echo "===== AWS CLI ====="
+                    aws --version
+
+                    echo ""
+                    echo "===== Trivy ====="
+                    trivy --version
+                '''
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                sh 'npm install'
+            }
+        }
+
+        stage('Build Application') {
+            steps {
+                sh 'npm run build'
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                script {
+
+                    def scannerHome = tool 'SonarScanner'
+
+                    withSonarQubeEnv('SonarQube') {
+
+                        sh """
+                        ${scannerHome}/bin/sonar-scanner \
+                        -Dsonar.projectKey=restaurant-company \
+                        -Dsonar.projectName=restaurant-company \
+                        -Dsonar.sources=src \
+                        -Dsonar.sourceEncoding=UTF-8
+                        """
+
+                    }
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh '''
+                    docker build \
+                    -t ${IMAGE_NAME}:${IMAGE_TAG} .
+                '''
+            }
+        }
+
+        stage('Trivy Image Scan') {
+            steps {
+                sh '''
+                    trivy image \
+                    --severity HIGH,CRITICAL \
+                    --format table \
+                    --output trivy-report.txt \
+                    --no-progress \
+                    ${IMAGE_NAME}:${IMAGE_TAG}
+                '''
+            }
+        }
+
+        stage('Login to Amazon ECR') {
+            steps {
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws-ecr'
+                ]]) {
+
+                    sh '''
+                    aws ecr get-login-password --region ${AWS_REGION} | \
+                    docker login \
+                    --username AWS \
+                    --password-stdin \
+                    ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+                    '''
+                }
+            }
+        }
+
+        stage('Tag Docker Image') {
+            steps {
+                sh '''
+                    docker tag \
+                    ${IMAGE_NAME}:${IMAGE_TAG} \
+                    ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}
+                '''
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                sh '''
+                    docker push \
+                    ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}
+                '''
+            }
+        }
+
+    }
+
+    post {
+
+        success {
+            echo "========================================"
+            echo "Pipeline completed successfully!"
+            echo "SonarQube scan completed."
+            echo "Trivy scan completed."
+            echo "Docker image pushed to Amazon ECR."
+            echo "========================================"
+        }
+
+        failure {
+            echo "========================================"
+            echo "Pipeline failed."
+            echo "========================================"
+        }
+
+        always {
+            archiveArtifacts artifacts: 'trivy-report.txt', allowEmptyArchive: true
+            cleanWs()
+        }
+    }
+}
 [7:44 PM, 8/11/2026] Aisalkyn: which git
 [8:16 PM, 8/11/2026] Aisalkyn: brew install trivy
 [8:25 PM, 8/11/2026] Aisalkyn: docker exec -u root -it practical_wright bash
@@ -59,7 +201,7 @@ npm -v
         IMAGE_TAG = "latest"
 
         AWS_REGION = "us-east-1"
-        AWS_ACCOUNT_ID = "484908302072"
+        AWS_ACCOUNT_ID = "230026708124"
         ECR_REPOSITORY = "restaurant-company"
     }
 
@@ -76,19 +218,19 @@ npm -v
             steps {
                 sh '''
                     echo "===== Git ====="
-                    sh 'git --version'
+                    git --version
 
                     echo "===== Node ====="
-                    sh 'node --version'
+                    node -v
 
                     echo "===== NPM ====="
-                    sh 'npm --version'
+                    npm -v
 
                     echo "===== Docker ====="
-                    sh 'docker --version'
+                    docker --version
 
                     echo "===== AWS CLI ====="
-                    sh 'aws --version'
+                    aws --version
                 '''
             }
         }
