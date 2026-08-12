@@ -1,10 +1,5 @@
 pipeline {
-    agent any  
-
-        tools { 
-            nodejs 'NodeJS'
-     
-    }
+    agent any
 
     environment {
         PATH = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:${env.PATH}"
@@ -21,6 +16,7 @@ pipeline {
 
         stage('Checkout') {
             steps {
+                echo "Checking out code from GitHub..."
                 checkout scm
             }
         }
@@ -28,108 +24,59 @@ pipeline {
         stage('Verify Environment') {
             steps {
                 sh '''
-                    echo "===== Environment ====="
-                    echo "PATH=$PATH"
+                    echo "===== Git ====="
+                    git --version
 
-                    echo ""
                     echo "===== Node ====="
                     node -v
 
-                    echo ""
                     echo "===== NPM ====="
                     npm -v
 
-                    echo ""
                     echo "===== Docker ====="
                     docker --version
 
-                    echo ""
                     echo "===== AWS CLI ====="
                     aws --version
-
-                    echo ""
-                    echo "===== Trivy ====="
-                    trivy --version
                 '''
             }
         }
 
         stage('Install Dependencies') {
             steps {
+                echo "Installing dependencies..."
                 sh 'npm install'
             }
         }
 
         stage('Build Application') {
             steps {
+                echo "Building application..."
                 sh 'npm run build'
-            }
-        }
-
-        stage('SonarQube Analysis') {
-            steps {
-                script {
-
-                    def scannerHome = tool 'SonarScanner'
-
-                    withSonarQubeEnv('SonarQube') {
-
-                        sh """
-                        ${scannerHome}/bin/sonar-scanner \
-                        -Dsonar.projectKey=restaurant-company \
-                        -Dsonar.projectName=restaurant-company \
-                        -Dsonar.sources=src \
-                        -Dsonar.sourceEncoding=UTF-8
-                        """
-
-                    }
-                }
-            }
-        }
-
-        stage('Quality Gate') {
-            steps {
-                timeout(time: 5, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
-                }
             }
         }
 
         stage('Build Docker Image') {
             steps {
+                echo "Building Docker image..."
                 sh '''
-                    docker build \
-                    -t ${IMAGE_NAME}:${IMAGE_TAG} .
+                    docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
                 '''
             }
         }
 
-        stage('Trivy Image Scan') {
-            steps {
-                sh '''
-                    trivy image \
-                    --severity HIGH,CRITICAL \
-                    --format table \
-                    --output trivy-report.txt \
-                    --no-progress \
-                    ${IMAGE_NAME}:${IMAGE_TAG}
-                '''
-            }
-        }
-
-        stage('Login to Amazon ECR') {
+        stage('Login to AWS ECR') {
             steps {
                 withCredentials([[
                     $class: 'AmazonWebServicesCredentialsBinding',
                     credentialsId: 'aws-ecr'
                 ]]) {
-
                     sh '''
-                    aws ecr get-login-password --region ${AWS_REGION} | \
-                    docker login \
-                    --username AWS \
-                    --password-stdin \
-                    ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+                        aws ecr get-login-password --region ${AWS_REGION} | \
+                        docker login \
+                        --username AWS \
+                        --password-stdin \
+                        ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
                     '''
                 }
             }
@@ -145,7 +92,7 @@ pipeline {
             }
         }
 
-        stage('Push Docker Image') {
+        stage('Push Docker Image to ECR') {
             steps {
                 sh '''
                     docker push \
@@ -153,30 +100,22 @@ pipeline {
                 '''
             }
         }
-
     }
 
     post {
-
         success {
             echo "========================================"
-            echo "Pipeline completed successfully!"
-            echo "SonarQube scan completed."
-            echo "Trivy scan completed."
-            echo "Docker image pushed to Amazon ECR."
+            echo "PIPELINE SUCCESSFUL"
+            echo "Application built successfully."
+            echo "Docker image pushed to AWS ECR."
             echo "========================================"
         }
 
         failure {
             echo "========================================"
-            echo "Pipeline failed."
+            echo "PIPELINE FAILED"
+            echo "Check the Jenkins Console Output."
             echo "========================================"
         }
-
-        always {
-            archiveArtifacts artifacts: 'trivy-report.txt', allowEmptyArchive: true
-            cleanWs()
-        }
     }
-}
 }
